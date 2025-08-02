@@ -137,7 +137,7 @@ const SendClimbToBoardButton: React.FC<SendClimbToBoardButtonProps> = ({ boardDe
       icon={isConnected ? <BulbFilled className={'connect-button-glow'} /> : <BulbOutlined />} // Conditionally apply "glow" class
       onClick={handleClick}
       loading={loading}
-      disabled={!currentClimbQueueItem}
+      // disabled={!currentClimbQueueItem} // Allow connection even if no climb is selected
     />
   );
 };

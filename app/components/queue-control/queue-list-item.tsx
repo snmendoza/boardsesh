@@ -13,6 +13,7 @@ import { TickButton } from '../logbook/tick-button';
 import ClimbThumbnail from '../climb-card/climb-thumbnail';
 import { useBoardProvider } from '../board-provider/board-provider-context';
 import { CopyrightOutlined } from '@ant-design/icons';
+import { useQueueContext } from './queue-context';
 
 const { Text } = Typography;
 
@@ -86,6 +87,7 @@ const QueueListItem: React.FC<QueueListItemProps> = ({
 }) => {
   const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
   const itemRef = useRef<HTMLDivElement>(null);
+  const { removeFromQueue, viewOnlyMode } = useQueueContext();
 
   useEffect(() => {
     const element = itemRef.current;
@@ -186,7 +188,26 @@ const QueueListItem: React.FC<QueueListItemProps> = ({
             />
           </Col>
           <Col xs={3} sm={2}>
-            <TickButton currentClimb={item.climb} angle={item.climb.angle} boardDetails={boardDetails} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'flex-end' }}>
+              <TickButton currentClimb={item.climb} angle={item.climb.angle} boardDetails={boardDetails} />
+              {!viewOnlyMode && (
+                <button
+                  aria-label="Remove from queue"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#ff4d4f',
+                    fontSize: '1.5em',
+                    cursor: 'pointer',
+                    lineHeight: 1,
+                    padding: 0,
+                  }}
+                  onClick={() => removeFromQueue(item)}
+                >
+                  -
+                </button>
+              )}
+            </div>
           </Col>
         </Row>
         {closestEdge && <DropIndicator edge={closestEdge} gap="1px" />}

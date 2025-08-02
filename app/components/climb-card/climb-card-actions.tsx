@@ -2,11 +2,20 @@
 import React, { useState } from 'react';
 import { useQueueContext } from '../queue-control/queue-context';
 import { BoardDetails, Climb } from '@/app/lib/types';
-import { PlusCircleOutlined, HeartOutlined, InfoCircleOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { PlusCircleOutlined, HeartOutlined, InfoCircleOutlined, CheckCircleOutlined, ArrowUpOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { constructClimbViewUrl, constructClimbViewUrlWithSlugs } from '@/app/lib/url-utils';
 import { track } from '@vercel/analytics';
 import { message } from 'antd';
+import { Tooltip, Button } from 'antd';
+import {
+  getBluetoothPacket,
+  getCharacteristic,
+  requestDevice,
+  splitMessages,
+  writeCharacteristicSeries,
+} from '../board-bluetooth-control/bluetooth';
+import { HoldRenderData } from '../board-renderer/types';
 
 // import TickClimbButton from '@/c/tick-climb/tick-climb-button';
 
@@ -17,6 +26,9 @@ type ClimbCardActionsProps = {
 const ClimbCardActions = ({ climb, boardDetails }: ClimbCardActionsProps) => {
   const { addToQueue, queue } = useQueueContext();
   const [isDuplicate, setDuplicateTimer] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const bluetoothDeviceRef = React.useRef<BluetoothDevice | null>(null);
+  const characteristicRef = React.useRef<BluetoothRemoteGATTCharacteristic | null>(null);
 
   if (!climb) {
     return [];
@@ -44,7 +56,75 @@ const ClimbCardActions = ({ climb, boardDetails }: ClimbCardActionsProps) => {
     }
   };
 
+  // Direct send to board logic
+  const handleSendToBoard = async () => {
+    if (!navigator.bluetooth) {
+      return message.error('Current browser does not support Web Bluetooth.');
+    }
+    setLoading(true);
+    try {
+      if (!bluetoothDeviceRef.current || !characteristicRef.current) {
+        const bluetoothboardname = boardDetails.board_name[0].toUpperCase() + boardDetails.board_name.slice(1);
+        const device = await requestDevice(bluetoothboardname);
+        const characteristic = await getCharacteristic(device);
+        if (characteristic) {
+          bluetoothDeviceRef.current = device;
+          characteristicRef.current = characteristic;
+        }
+      }
+      // Prepare frames (handle mirrored)
+      let frames = climb.frames;
+      if (climb.mirrored && boardDetails.holdsData) {
+        // Use the mirrored frames logic from send-climb-to-board-button
+        const holdIdToMirroredIdMap = new Map<number, number>();
+        (boardDetails.holdsData as HoldRenderData[]).forEach((hold) => {
+          if (hold.mirroredHoldId) {
+            holdIdToMirroredIdMap.set(hold.id, hold.mirroredHoldId);
+          }
+        });
+        frames = frames
+          .split('p')
+          .filter((hold) => hold)
+          .map((holdData) => {
+            const [holdId, stateCode] = holdData.split('r').map((str) => Number(str));
+            const mirroredHoldId = holdIdToMirroredIdMap.get(holdId);
+            if (mirroredHoldId === undefined) {
+              throw new Error(`Mirrored hold ID is not defined for hold ID ${holdId}.`);
+            }
+            return `p${mirroredHoldId}r${stateCode}`;
+          })
+          .join('');
+      }
+      const placementPositions = boardDetails.ledPlacements;
+      const bluetoothPacket = getBluetoothPacket(frames, placementPositions, boardDetails.board_name);
+      if (characteristicRef.current) {
+        await writeCharacteristicSeries(characteristicRef.current, splitMessages(bluetoothPacket));
+        track('Climb Sent to Board Direct', {
+          climbUuid: climb.uuid,
+          boardLayout: `${boardDetails.layout_name}`,
+        });
+        message.success('Climb sent to board!');
+      }
+    } catch (error) {
+      console.error('Error sending climb to board:', error);
+      message.error('Failed to send climb to board.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return [
+    <Tooltip key="sendtoboard" title="Send to board">
+      <Button
+        icon={<ArrowUpOutlined />}
+        loading={loading}
+        onClick={handleSendToBoard}
+        type="default"
+        size="small"
+        style={{ color: '#1890ff' }}
+        aria-label="Send climb to board"
+      />
+    </Tooltip>,
     // <SettingOutlined key="setting" />,
     // <TickClimbButton key="tickclimbbutton" />,
     <Link
